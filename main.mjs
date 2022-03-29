@@ -1,34 +1,50 @@
 import bip39 from 'bip39'
 import bitcoinjs from 'bitcoinjs-lib'
+import { BIP32Factory } from 'bip32';
 import { ECPairFactory } from 'ecpair';
 import * as ecc from 'tiny-secp256k1';
+import axios from 'axios';
+
+const bip32 = BIP32Factory(ecc);
 
 const mnemonic = bip39.generateMnemonic(256)
+const path = "m/44'/1'/0'/0/0";
+
+
 //Generates random mnemonic
 //console.log(mnemonic)
 //Overiting for conistatncy
 const mnemonicSaved = "clip finish garbage off nice bicycle memory mouse shy multiply bonus busy client tattoo hamster gold slam lava orange pave arm grocery midnight name"
 console.log(mnemonicSaved)//Prints Mnemon
 
-const b = bip39.mnemonicToSeedSync('basket')
+const seed = bip39.mnemonicToSeedSync(mnemonicSaved)
 //Taking a mnemonic phrase to a list of 64 numbers that stay consistantof the phrase you enter
-//console.log(b)
+console.log(seed)
 
-const mTOe = bip39.mnemonicToEntropy(mnemonicSaved)
-//Takes mnemonic to entropy which will be used to make the private key
-console.log(mTOe)//Prints String
+//Get the seed from mnemonic already made
+//Use bip32 to derive children from taht key with the path
 
-const eTOm = bip39.entropyToMnemonic(mTOe)
-//Goes other way
-console.log(eTOm)//Prints Mnemon
+//Get the bip32 root from seed
+const root = bip32.fromSeed(seed);
+//Get the keyPair from the root
+const keyPair = root.derivePath(path);
+console.log("KeyPair: ", keyPair)
 
-//Generating a TestNet Key Pair
-//const ECPair = ECPairFactory(ecc);
-const TESTNET = bitcoinjs.networks.testnet;
+const { address } = bitcoinjs.payments.p2pkh({
+        pubkey: keyPair.publicKey,
+        network: bitcoinjs.networks.testnet
+});
 
-const ECPair = ECPairFactory(ecc);
+console.log("Address:", address)
+console.log("Private Key: ", Buffer.from(keyPair.privateKey).toString('hex'))
+console.log("Public Key: ", Buffer.from(keyPair.publicKey).toString('hex'));
 
-const keyPair = ECPair.fromWIF(
-    '2b4ae17e4ca9562be2bc85c7922c658f92adbc9a2b22cb0fba6f50c0bacda31c',
-  );
-  const { address } = bitcoin.payments.p2pkh({ pubkey: keyPair.publicKey });
+axios
+  .get('https://blockstream.info/testnet/api//address/'+address)
+  .then(res => {
+    console.log(`statusCode: ${res.status}`)
+    console.log(res.data)
+  })
+  .catch(error => {
+    console.error(error)
+  })
