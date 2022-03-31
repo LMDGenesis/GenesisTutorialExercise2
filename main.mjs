@@ -13,6 +13,7 @@ const regtestUtils = new RegtestUtils({ APIPASS, APIURL });
 const ECPair = ECPairFactory(ecc);
 const bip32 = BIP32Factory(ecc);
 const regtest = regtestUtils.network;
+
 const mnemonic = bip39.generateMnemonic(256)
 const path = "m/44'/1'/0'/0/0";
 
@@ -25,7 +26,7 @@ const mnemonicSaved = "clip finish garbage off nice bicycle memory mouse shy mul
 //console.log(mnemonicSaved)//Prints Mnemon
 
 const seed = bip39.mnemonicToSeedSync(mnemonicSaved)
-//Taking a mnemonic phrase to a list of 64 numbers that stay consistantof the phrase you enter
+//Taking a mnemonic phrase to a list of 64 numbers that stay consistant of the phrase you enter
 //console.log(seed)
 
 //Get the seed from mnemonic already made
@@ -42,9 +43,6 @@ const { address } = bitcoinjs.payments.p2pkh({
     network: bitcoinjs.networks.testnet,
 });
 
-console.log("Address:", address)
-//console.log("Private Key: ", Buffer.from(keyPair.privateKey).toString('hex'))
-//console.log("Public Key: ", Buffer.from(keyPair.publicKey).toString('hex'));
 
 const getTransactionsFromAddress = async (address) => {
     try {
@@ -72,7 +70,7 @@ const getUTXOFromAddress = async (address) => {
     try {
         const resp = await axios.get('https://blockstream.info/testnet/api/address/' + address + '/utxo');
         //console.log(resp.data[0]);
-        return resp.data[0];
+        return resp.data;
 
     } catch (e) {
         console.log(e)
@@ -92,40 +90,56 @@ const broadcastToTestnet = async(transaction) => {
     }
 }
 
-const transactions = await getTransactionsFromAddress(address);
-const utxo = await getUTXOFromAddress(address);
-//console.log("utxo",utxo);
-const transactionHash = await getFullTransactionHashFromTransactionId(utxo.txid)
+const sendMoney = async(amountToSend, yourAddress, addressToSendTo) => {
 
-console.log(transactions)
-const psbt = new bitcoinjs.Psbt({network: bitcoinjs.networks.testnet});
-// psbt.setVersion(2); // These are defaults. This line is not needed.
-// psbt.setLocktime(0); // These are defaults. This line is not needed.
+    const transactions = await getTransactionsFromAddress(address);
+    const utxos = await getUTXOFromAddress(address);
+    //console.log(utxos);
+    const miningFee = 15000
+    var totalBalance = 0;
 
-//Create Transaction
-const input = {hash: utxo.txid, index: utxo.vout, nonWitnessUtxo: Buffer.from(transactionHash,"hex")}
+    for (let i = 0; i < utxos.length; i++) {
+        totalBalance += utxos[i].value
+    }
 
-const totalBalance = 
+    console.log("Your Address: ", yourAddress)
+    console.log("Current Total Balance: ", totalBalance);
+    console.log("Their Address: ", addressToSendTo);
+    console.log()
 
-//Transaction Input
-psbt.addInput(input);
+    if(totalBalance + miningFee < amountToSend){
+        console.log("Error! You don't have enough to send that amount");
+    }
 
-//Transaction Output
-psbt.addOutput({
-    address: "mzNgRfPMCip8XpgB6NZ8XyJa2sqTxfintF",
-    value: 5000,
-});
+    //Create Transaction You have enough money
+    var psbt = new bitcoinjs.Psbt({network: bitcoinjs.networks.testnet});
+    var currentBalance = 0;
+    for (let i = 0; i < utxos.length; i++) {
+        currentBalance += utxos[i].value
 
+        var transactionHash = await getFullTransactionHashFromTransactionId(utxos[i].txid)
+        var input = {hash: utxos[0].txid, index: utxos[0].vout, nonWitnessUtxo: Buffer.from(transactionHash,"hex")}
+        psbt.addInput(input);
 
-psbt.addOutput({
-    address: address,
-    value: 5000,
-});
+        //console.log("Do you have enough moeny with this UTXO?")
+        if(currentBalance + miningFee > amountToSend){
+            psbt.addOutput({
+                address: addressToSendTo,
+                value: amountToSend,
+            });
 
-psbt.signInput(0, ECPair.fromPrivateKey(keyPair.privateKey));
-psbt.validateSignaturesOfInput(0, validator);
+            psbt.signInput(0, ECPair.fromPrivateKey(keyPair.privateKey));
+            psbt.validateSignaturesOfInput(0, validator);
+            psbt.finalizeAllInputs();
+            await broadcastToTestnet(psbt.extractTransaction().toHex());
+            console.log("Sent " + amountToSend + " to " + addressToSendTo + " from " + yourAddress)
+            //console.log("The UTXO(s) that were used were:")
+            //console.log("If you have enough money just use that/those UTXO(s)")
+            break;
+        }
+    }
+}
 
-psbt.finalizeAllInputs();
+const christiansTestNetAddress = "miXM6nD9LKsJds61B2AhsEJjNVXU6UJzRV";
 
-//console.log(psbt.extractTransaction().toHex());
-//await broadcastToTestnet(psbt.extractTransaction().toHex());
+sendMoney(5000, address, christiansTestNetAddress)
